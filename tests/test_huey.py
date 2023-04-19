@@ -2,13 +2,15 @@ import pathlib
 import tempfile
 from typing import Generator
 
-import np_queuey
 import pytest
 
+import np_queuey
+
+
 @pytest.fixture(scope='module')
-def huey_queue() -> Generator[np_queuey.HueyQueue, None, None]:
+def huey_queue() -> Generator[np_queuey.HueyDispatcher, None, None]:
     tempdir = tempfile.mkdtemp()
-    huey = np_queuey.HueyQueue(f'{tempdir}/huey.db')
+    huey = np_queuey.HueyDispatcher(f'{tempdir}/huey.db')
     yield huey
         
 def test_huey_queue(huey_queue):

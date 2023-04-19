@@ -1,22 +1,22 @@
 from __future__ import annotations
 
-import pathlib
 import json
-from typing_extensions import Literal
+import pathlib
 
 import huey as _huey
 import np_config
 import np_logging
 import np_session
 import np_tools
+from typing_extensions import Literal
 
 import np_queuey
-from np_queuey.jobs import dynamicrouting_behavior_session_mtrain_upload as job
 import np_queuey.utils as utils
+from np_queuey.jobs import dynamicrouting_behavior_session_mtrain_upload as job
 
 logger = np_logging.getLogger()
 
-huey = np_queuey.HueyQueue(utils.DEFAULT_HUEY_SQLITE_DB_PATH).huey
+huey = np_queuey.HueyDispatcher(utils.DEFAULT_HUEY_SQLITE_DB_PATH).huey_class
 
 UPLOAD_JSON_DIR_CONFIG_KEY = (
     'dynamicrouting_behavior_session_mtrain_upload_json_dir'
@@ -51,7 +51,7 @@ def upload_session_on_hpc(foraging_id_and_filename: tuple[str, str]) -> None:
     )
     write_input_json(foraging_id_and_filename)
     write_shell_script(foraging_id_and_filename)
-    with np_tools.ssh('hpc-login') as ssh:
+    with np_tools.hpc as ssh:
         logger.debug(
             'Launching mtrain_lims on hpc for %s', foraging_id_and_filename
         )
