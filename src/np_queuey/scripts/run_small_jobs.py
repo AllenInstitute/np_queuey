@@ -1,3 +1,6 @@
+"""Put all job-queue process that only require the dependencies in this project
+(np_queuey) in this file. 
+""" 
 import subprocess
 
 

@@ -491,6 +491,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "np-jobs"
+version = "0.0.3"
+requires_python = ">=3.8"
+summary = "Interfaces for job queues used to coordinate distributed tasks for Mindscope Neuropixels workflows."
+dependencies = [
+    "np-config>=0.4.17",
+    "np-logging>=0.5.1",
+    "np-session>=0.5.1",
+    "np-tools>=0.1.8",
+]
+
+[[package]]
 name = "np-logging"
 version = "0.5.1"
 requires_python = ">=3.7,<4.0"
@@ -898,7 +910,7 @@ summary = "Backport of pathlib-compatible object wrapper for zip files"
 [metadata]
 lock_version = "4.2"
 groups = ["default", "dev"]
-content_hash = "sha256:e0e324365b46f00a5af90769edc29d2767c6eb4411d4eabb33faa8f1f8bb397f"
+content_hash = "sha256:71fbf99096dac373c3d400c4fd1ea9fe0b52b75aafc8a99656f1e40f82da5bf8"
 
 [metadata.files]
 "appdirs 1.4.4" = [
@@ -1630,6 +1642,10 @@ content_hash = "sha256:e0e324365b46f00a5af90769edc29d2767c6eb4411d4eabb33faa8f1f
 "np-config 0.4.17" = [
     {url = "https://files.pythonhosted.org/packages/3a/ed/98d9ad9a4a7b8aaf7ad439f2254d1fcb10c48310472f395c6753723eab06/np_config-0.4.17.tar.gz", hash = "sha256:d7175a19fcb4afd4c82987a6a88a20b106a0f00e0fec535e269d018bb55f2966"},
     {url = "https://files.pythonhosted.org/packages/ba/4f/ac2ff54cbe803c357aad164c5f9cf6c46b9ca96d263b736e5c0e217d4495/np_config-0.4.17-py3-none-any.whl", hash = "sha256:e06a9de6220a4e1a2ff423fc93f7498db712bda18dfa85f77b42621ef7a0ed11"},
+]
+"np-jobs 0.0.3" = [
+    {url = "https://files.pythonhosted.org/packages/37/64/def19ea0dcc803f6f2b69f41d7f76faf1105bc622f46423df3e433a1ce93/np_jobs-0.0.3.tar.gz", hash = "sha256:a6dba4495c04c8a3157dde74eecfa01b4dc51c3e03ea9d2c446d36f2abdf85da"},
+    {url = "https://files.pythonhosted.org/packages/d1/d1/6d53d88471be51e513912c2825f81fab3b0f43a8e32dc60d1706e5853d01/np_jobs-0.0.3-py3-none-any.whl", hash = "sha256:cd89cbaa10a53e2a882c09c6a347e58404e07508bc064f29223954f52c020f9a"},
 ]
 "np-logging 0.5.1" = [
     {url = "https://files.pythonhosted.org/packages/91/7b/9ba634f79c1267913f266444978f0672efdc8b9cb2b7c4fcd4358086875f/np_logging-0.5.1-py3-none-any.whl", hash = "sha256:b48435c17ba7182253c43666dbcab88472e14fabbd5089a248a08509572e1764"},

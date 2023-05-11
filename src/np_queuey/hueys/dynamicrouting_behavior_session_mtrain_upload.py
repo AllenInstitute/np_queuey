@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-import pathlib
 import json
-from typing_extensions import Literal
+import pathlib
 
-import huey as _huey
 import np_config
 import np_logging
 import np_session
 import np_tools
-
-import np_queuey
-from np_queuey.jobs import dynamicrouting_behavior_session_mtrain_upload as job
-import np_queuey.utils as utils
+from huey import SqliteHuey, crontab
+from np_jobs.queues import dynamicrouting_behavior_session_mtrain_upload as job
+from typing_extensions import Literal
 
 logger = np_logging.getLogger()
 
-huey = np_queuey.HueyQueue(utils.DEFAULT_HUEY_SQLITE_DB_PATH).huey
+DEFAULT_HUEY_SQLITE_DB_PATH: str = np_config.fetch('/projects/np_queuey/config')['shared_huey_sqlite_db_path']
+
+huey = SqliteHuey(filename=DEFAULT_HUEY_SQLITE_DB_PATH, journal_mode='truncate', fsync=True)
 
 UPLOAD_JSON_DIR_CONFIG_KEY = (
     'dynamicrouting_behavior_session_mtrain_upload_json_dir'
@@ -24,7 +23,7 @@ UPLOAD_JSON_DIR_CONFIG_KEY = (
 """Single leading fwd slash, for unix compatibility on hpc"""
 
 
-@huey.periodic_task(_huey.crontab(minute='*/10', strict=True))
+@huey.periodic_task(crontab(minute='*/10', strict=True))
 def upload_outstanding_sessions() -> None:
     sessions: list[
         tuple[str, str]

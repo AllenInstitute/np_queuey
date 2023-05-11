@@ -7,34 +7,31 @@ import random
 import shutil
 import subprocess
 import time
-from typing import Generator, NoReturn
+from typing import Generator, Iterable, NoReturn
 
-import huey as _huey
 import np_logging
 import np_session
 import np_tools
+from huey import MemoryHuey
+from np_jobs import (Job, JobT, PipelineNpexpUploadQueue, PipelineQCQueue,
+                     PipelineSortingQueue, SessionArgs, SortingJob, get_job,
+                     get_session, update_status)
 from typing_extensions import Literal
-
-from np_queuey.utils import get_job, get_session, update_status
-from np_queuey.queues.pipeline_sorting_queue import (
-    PipelineSortingQueue, SortingJob
-)
-from np_queuey.queues.pipeline_qc_queue import PipelineQCQueue
-from np_queuey.types import SessionArgs, JobT, Job
 
 logger = np_logging.getLogger()
 
-huey = _huey.SqliteHuey('sorting.db', immediate=True)
+huey = MemoryHuey(immediate=True)
 
-Q = PipelineSortingQueue()
+SORTING_Q = PipelineSortingQueue()
+UPLOAD_Q = PipelineNpexpUploadQueue()
 
 @huey.task()
 def sort_outstanding_sessions() -> None:
-    job: SortingJob | None = Q.next()
+    job: SortingJob | None = SORTING_Q.next()
     if job is None:
         logger.info('No outstanding sessions to sort')
         return
-    if Q.is_started(job):
+    if SORTING_Q.is_started(job):
         logger.info('Sorting already started for %s', job.session)
         return
     run_sorting(job)
@@ -43,7 +40,7 @@ def sort_outstanding_sessions() -> None:
 def run_sorting(session_or_job: SortingJob | SessionArgs) -> None:
     job = get_job(session_or_job, SortingJob)
     np_logging.web('np_queuey').info('Starting sorting %s probes %s', job.session, job.probes)
-    with update_status(Q, job):
+    with update_status(SORTING_Q, job):
         remove_existing_sorted_folders_on_npexp(job)
         start_sorting(job)
         move_sorted_folders_to_npexp(job)
@@ -84,7 +81,7 @@ def move_sorted_folders_to_npexp(session_or_job: SortingJob | SessionArgs) -> No
         logger.info(f'Moving {src} to {dest}')
         subprocess.run([
             'robocopy', f'{src}', f'{dest}',
-             '/MOVE', '/E', '/COPYALL', '/R:0', '/W:0', '/MT:32'
+             '/MOVE', '/E', '/J', '/COPYALL', '/R:0', '/W:0', '/MT:32'
              ], check=False) # return code from robocopy doesn't signal failure      
         if src.exists():
             np_tools.move(src, dest, ignore_errors=True)
@@ -104,9 +101,56 @@ def remove_raw_data_on_acq_drives(session_or_job: SortingJob | SessionArgs) -> N
 def add_job_to_pipeline_qc_queue(session_or_job: Job | SessionArgs) -> None:
     PipelineQCQueue().add_or_update(session_or_job)
 
+
+@huey.task()
+def upload_outstanding_sessions() -> None:
+    job: Job | None = UPLOAD_Q.next()
+    if job is None:
+        logger.info('No outstanding sessions in npexp_upload queue')
+        return
+    if UPLOAD_Q.is_started(job):
+        logger.info('Upload already started for %s', job.session)
+        return
+    run_upload(job)
+
+def run_upload(session_or_job: Job | SessionArgs) -> None:
+    job = get_job(session_or_job, Job)
+    np_logging.web('np_queuey').info('Starting raw data upload to npexp %s', job.session)
+    with update_status(UPLOAD_Q, job):
+        start_upload(job)
+        add_to_pipeline_sorting_queue(job)
+    np_logging.web('np_queuey').info('Validated raw data on npexp %s', job.session)
+
+def start_upload(session_or_job: Job | SessionArgs) -> None:
+    session = get_session(session_or_job)
+    for src in raw_data_folders(session):
+        dest = session.npexp_path / src.name
+        logger.info(f'Copying {src} to {dest}')
+        subprocess.run([
+            'robocopy', f'{src}', f'{dest}',
+            '/E', '/COPYALL', '/J', '/R:3', '/W:1800', '/MT:32'
+            ], check=False) # return code from robocopy doesn't signal failure      
+    # checksum validate copies after copying (since exception raised on
+    # invalid copies)
+    for src in raw_data_folders(session):
+        dest = session.npexp_path / src.name
+        np_tools.copy(src, dest)
+        logger.info(f'Checksum-validated copy of {src} at {dest}')
+
+def raw_data_folders(session_or_job: Job | SessionArgs) -> Iterable[pathlib.Path]:
+    session = get_session(session_or_job)
+    for drive in ('A:', 'B:'):
+        for src in pathlib.Path(drive).glob(f'{session}*'):
+            yield src
+    
+def add_to_pipeline_sorting_queue(session_or_job: Job | SessionArgs) -> None:
+    PipelineSortingQueue().add_or_update(session_or_job)
+
+
 def main() -> NoReturn:
     """Run synchronous task loop."""
     while True:
+        upload_outstanding_sessions()
         sort_outstanding_sessions()
         time.sleep(300)
                 

@@ -9,18 +9,16 @@ import subprocess
 import time
 from typing import Generator, NoReturn
 
-import huey as _huey
 import np_logging
 import np_session
+from huey import MemoryHuey
+from np_jobs import (Job, JobT, PipelineQCQueue, SessionArgs, get_job,
+                     get_session, update_status)
 from typing_extensions import Literal
-
-from np_queuey.queues.pipeline_qc_queue import PipelineQCQueue
-from np_queuey.types import Job, JobT, SessionArgs
-from np_queuey.utils import get_job, get_session, update_status
 
 logger = np_logging.getLogger()
 
-huey = _huey.SqliteHuey('qc.db', immediate=True)
+huey = MemoryHuey(immediate=True)
 
 Q = PipelineQCQueue()
 
