@@ -91,8 +91,13 @@ def remove_raw_data_on_acq_drives(session_or_job: SortingJob | SessionArgs) -> N
     for drive in ('A:', 'B:'):
         for path in pathlib.Path(drive).glob(f'{session}*'):
             npexp_path = session.npexp_path / path.name
-            lims_path = session.lims_path / path.name if hasattr(session, 'lims_path') else None
-            if not npexp_path.exists() and (lims_path is None or not lims_path.exists()):
+            lims_path = (session.lims_path / path.name) if hasattr(session, 'lims_path') and session.lims_path else None
+            for dest in (lims_path, npexp_path):
+                if dest is not None and dest.exists() and (
+                    np_tools.dir_size_gb(dest) == np_tools.dir_size_gb(path)
+                ):
+                    break # matching copy found (have to trust it was prev checksummed)
+            else:
                 logger.info('Copying %r to npexp', path)
                 np_tools.copy(path, npexp_path)
             logger.info('Removing %r', path)
