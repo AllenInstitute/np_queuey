@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "np-tools"
-version = "0.1.9"
+version = "0.1.14"
 requires_python = "<4,>=3.7"
 summary = "General-purpose tools for common tasks encountered in Mindscope Neuropixels workflows."
 dependencies = [
@@ -541,6 +541,7 @@ dependencies = [
     "invoke<2.1",
     "np-config>=0.4.17",
     "np-logging>=0.5.1",
+    "rich>=13.3.5",
 ]
 
 [[package]]
@@ -786,7 +787,7 @@ summary = "Resolve abstract dependencies into concrete ones"
 
 [[package]]
 name = "rich"
-version = "13.3.4"
+version = "13.3.5"
 requires_python = ">=3.7.0"
 summary = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
 dependencies = [
@@ -910,7 +911,7 @@ summary = "Backport of pathlib-compatible object wrapper for zip files"
 [metadata]
 lock_version = "4.2"
 groups = ["default", "dev"]
-content_hash = "sha256:71fbf99096dac373c3d400c4fd1ea9fe0b52b75aafc8a99656f1e40f82da5bf8"
+content_hash = "sha256:646b28c0dd047edf306f81be1b8d7f5d4d753e2c60431cf3a7e50613ac9ae80f"
 
 [metadata.files]
 "appdirs 1.4.4" = [
@@ -1655,9 +1656,9 @@ content_hash = "sha256:71fbf99096dac373c3d400c4fd1ea9fe0b52b75aafc8a99656f1e40f8
     {url = "https://files.pythonhosted.org/packages/05/3f/f156902ae9f82ebb857f71dc8d8a14319922fc2f967809f65d9603f471e1/np_session-0.6.4-py3-none-any.whl", hash = "sha256:d79ea606a2a2da84a6ded4f775e9bc2bdec15849b0d0c3a718b6569a73c4ebbc"},
     {url = "https://files.pythonhosted.org/packages/aa/75/8f700390954110345d398362716383915450ea953e9689781b4b70eecbc6/np-session-0.6.4.tar.gz", hash = "sha256:2ace61f1217aa8fe53d14405dde120424c507753a84b564e44181552998f0226"},
 ]
-"np-tools 0.1.9" = [
-    {url = "https://files.pythonhosted.org/packages/49/f6/302e0f284cc5625ad9f39e69a35d99fea540bb98f45dac2c8177909fffea/np_tools-0.1.9-py3-none-any.whl", hash = "sha256:d204e07afef768b0da2847118c93041e65cbcfed20553b82677e0c0b81b89e35"},
-    {url = "https://files.pythonhosted.org/packages/63/fb/c0aa437bbfc78ecde48c8fd50dc43e54d68497a94d2f9416445f466a76b6/np_tools-0.1.9.tar.gz", hash = "sha256:9e6f8ad5763670e8a6208860018ef38eb439765a7686172cbd294b7a03a62070"},
+"np-tools 0.1.14" = [
+    {url = "https://files.pythonhosted.org/packages/5f/23/706f3a8ce478b087dac1ca28a4e88b7b7fac345b6ab420be472c9f86a486/np_tools-0.1.14-py3-none-any.whl", hash = "sha256:322c8a34becf998285b7c8a104a59d972418fac3d125edab523736ae37e6e264"},
+    {url = "https://files.pythonhosted.org/packages/d3/17/0aef1bc2e5da0f9168ef516102474427a3f0756a81b29e1dc8c5872a8c36/np_tools-0.1.14.tar.gz", hash = "sha256:281b142e57580f509410625c079020f6c019710a173440ab6abf3e79ff767102"},
 ]
 "packaging 23.1" = [
     {url = "https://files.pythonhosted.org/packages/ab/c3/57f0601a2d4fe15de7a553c00adbc901425661bf048f2a22dfc500caf121/packaging-23.1-py3-none-any.whl", hash = "sha256:994793af429502c4ea2ebf6bf664629d07c1a9fe974af92966e4b8d2df7edc61"},
@@ -1922,9 +1923,9 @@ content_hash = "sha256:71fbf99096dac373c3d400c4fd1ea9fe0b52b75aafc8a99656f1e40f8
     {url = "https://files.pythonhosted.org/packages/ce/10/f699366ce577423cbc3df3280063099054c23df70856465080798c6ebad6/resolvelib-1.0.1.tar.gz", hash = "sha256:04ce76cbd63fded2078ce224785da6ecd42b9564b1390793f64ddecbe997b309"},
     {url = "https://files.pythonhosted.org/packages/d2/fc/e9ccf0521607bcd244aa0b3fbd574f71b65e9ce6a112c83af988bbbe2e23/resolvelib-1.0.1-py2.py3-none-any.whl", hash = "sha256:d2da45d1a8dfee81bdd591647783e340ef3bcb104b54c383f70d422ef5cc7dbf"},
 ]
-"rich 13.3.4" = [
-    {url = "https://files.pythonhosted.org/packages/31/3b/2360352760b436f822258396e66ffb6d42585518a9cde2f93f142e64c5eb/rich-13.3.4.tar.gz", hash = "sha256:b5d573e13605423ec80bdd0cd5f8541f7844a0e71a13f74cf454ccb2f490708b"},
-    {url = "https://files.pythonhosted.org/packages/9d/1a/28117ae737aec7c004ed5067034a8949adab43730420b50312821f466c3f/rich-13.3.4-py3-none-any.whl", hash = "sha256:22b74cae0278fd5086ff44144d3813be1cedc9115bdfabbfefd86400cb88b20a"},
+"rich 13.3.5" = [
+    {url = "https://files.pythonhosted.org/packages/39/03/6de23bdd88f5ee7f8b03f94f6e88108f5d7ffe6d207e95cdb06d9aa4cd57/rich-13.3.5-py3-none-any.whl", hash = "sha256:69cdf53799e63f38b95b9bf9c875f8c90e78dd62b2f00c13a911c7a3b9fa4704"},
+    {url = "https://files.pythonhosted.org/packages/3d/0b/8dd34d20929c4b5e474db2e64426175469c2b7fea5ba71c6d4b3397a9729/rich-13.3.5.tar.gz", hash = "sha256:2d11b9b8dd03868f09b4fffadc84a6a8cda574e40dc90821bd845720ebb8e89c"},
 ]
 "rsa 4.9" = [
     {url = "https://files.pythonhosted.org/packages/49/97/fa78e3d2f65c02c8e1268b9aba606569fe97f6c8f7c2d74394553347c145/rsa-4.9-py3-none-any.whl", hash = "sha256:90260d9058e514786967344d0ef75fa8727eed8a7d2e43ce9f4bcf1b536174f7"},

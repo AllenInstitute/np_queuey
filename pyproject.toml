@@ -1,6 +1,6 @@
 [project]
 name = "np_queuey"
-version = "0.2.11"
+version = "0.2.14"
 description = "Tools for submitting and processing jobs through a message queue for Mindscope Neuropixels workflows."
 authors = [
     {name = "Ben Hardcastle", email = "ben.hardcastle@alleninstitute.org"},
@@ -9,7 +9,7 @@ dependencies = [
     "huey>=2.4.5",
     "np-config>=0.4.17",
     "np-logging>=0.5.1",
-    "np-tools>=0.1.8",
+    "np-tools>=0.1.14",
     "np-session>=0.5.1",
     "typing-extensions>=4.5.0",
     "np-jobs>=0.0.3",
@@ -32,6 +32,7 @@ classifiers = [
 run_small_jobs = "np_queuey.scripts.run_small_jobs:main"
 run_sorting = "np_queuey.hueys.acq:main"
 run_qc = "np_queuey.hueys.qc:main"
+run_cloud_upload = "np_queuey.hueys.cloud_upload:main"
 
 [project.urls]
 Repository = "https://github.com/AllenInstitute/np_queuey"
