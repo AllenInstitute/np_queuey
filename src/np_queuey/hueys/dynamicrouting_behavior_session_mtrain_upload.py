@@ -28,7 +28,7 @@ def upload_outstanding_sessions() -> None:
     sessions: list[
         tuple[str, str]
     ] = job.get_outstanding_behavior_sessions_for_processing()
-    sessions = [_ for _ in sessions if '_366122_' not in sessions[1]]
+    sessions = [_ for _ in sessions if '_366122_' not in _[1]]
     if not sessions:
         logger.info('No outstanding sessions to upload (test mouse 366122 entries are skipped)')
         return
