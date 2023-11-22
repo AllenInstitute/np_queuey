@@ -11,16 +11,20 @@ from typing import Generator, NoReturn
 
 import np_logging
 import np_session
+import np_envs
+
 from huey import MemoryHuey
+from typing_extensions import Literal
+
 from np_jobs import (Job, JobT, PipelineQCQueue, SessionArgs, get_job,
                      get_session, update_status)
-from typing_extensions import Literal
 
 logger = np_logging.getLogger()
 
 huey = MemoryHuey(immediate=True)
 
 Q = PipelineQCQueue()
+venv = np_envs.venv('np_pipeline_qc')
 
 @huey.task()
 def qc_outstanding_sessions() -> None:
@@ -38,17 +42,20 @@ def run_qc(session_or_job: Job | SessionArgs) -> None:
     np_logging.web('np_queuey').info('Starting QC %s', job.session)
     with update_status(Q, job):
         start_qc(job)
-    np_logging.web('np_queuey').info('QC finished for %s', job.session)
+    if job.finished and not job.error:
+        np_logging.web('np_queuey').info('QC finished for %s', job.session)
 
 def start_qc(session_or_job: Job | SessionArgs) -> None:
     session = get_session(session_or_job)
-    subprocess.run([
-        "C:/Users/svc_neuropix/Documents/GitHub/np_pipeline_qc2/scripts/launch_qc_all_modules.bat",
-        session.folder,
-    ])
-    
+    subprocess.run(
+        f"{venv.python} -m np_pipeline_qc {session.folder}",
+    check=True, shell=True,
+    )
+
+
 def main() -> NoReturn:
     """Run synchronous task loop."""
+    venv.update()
     while True:
         qc_outstanding_sessions()
         time.sleep(300)

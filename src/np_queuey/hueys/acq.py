@@ -89,10 +89,13 @@ def move_sorted_folders_to_npexp(session_or_job: SortingJob | SessionArgs) -> No
 def remove_raw_data_on_acq_drives(session_or_job: SortingJob | SessionArgs) -> None:
     session = get_session(session_or_job)
     for drive in ('A:', 'B:'):
+        paths = []
         for path in pathlib.Path(drive).glob(f'{session}*'):
             npexp_path = session.npexp_path / path.name
-            lims_path = (session.lims_path / path.name) if hasattr(session, 'lims_path') and session.lims_path else None
-            for dest in (lims_path, npexp_path):
+            paths.append(npexp_path)
+            if hasattr(session, 'lims_path') and session.lims_path is not None:
+                paths.append(session.lims_path / path.name)
+            for dest in paths:
                 if dest is not None and dest.exists() and (
                     np_tools.dir_size_gb(dest) == np_tools.dir_size_gb(path)
                 ):
