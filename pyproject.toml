@@ -1,6 +1,6 @@
 [project]
 name = "np_queuey"
-version = "0.2.14"
+version = "0.2.45"
 description = "Tools for submitting and processing jobs through a message queue for Mindscope Neuropixels workflows."
 authors = [
     {name = "Ben Hardcastle", email = "ben.hardcastle@alleninstitute.org"},
@@ -10,9 +10,13 @@ dependencies = [
     "np-config>=0.4.17",
     "np-logging>=0.5.1",
     "np-tools>=0.1.14",
-    "np-session>=0.5.1",
+    "np-session>=0.6.38",
     "typing-extensions>=4.5.0",
-    "np-jobs>=0.0.3",
+    "np-jobs>=0.0.8",
+    "np-envs>=0.1.3",
+    "s3fs>=2023.10.0",
+    "universal-pathlib>=0.1.4",
+    "boto3>=1.1.0",
 ]
 requires-python = ">=3.8"
 readme = "README.md"
@@ -33,6 +37,7 @@ run_small_jobs = "np_queuey.scripts.run_small_jobs:main"
 run_sorting = "np_queuey.hueys.acq:main"
 run_qc = "np_queuey.hueys.qc:main"
 run_cloud_upload = "np_queuey.hueys.cloud_upload:main"
+run_vbn = "np_queuey.hueys.vbn:main"
 
 [project.urls]
 Repository = "https://github.com/AllenInstitute/np_queuey"
@@ -42,13 +47,12 @@ Repository = "https://github.com/AllenInstitute/np_queuey"
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
-[project.optional-dependencies]
+[tool.pdm.dev-dependencies]
 dev = [
     "blue>=0.9.1",
     "pytest>=7.2.2",
     "mypy>=1.1.1",
     "coverage[toml]>=7.2.2",
-    "pdm>=2.4.9",
     "pytest-cov>=4.0.0",
     "bump>=1.3.2",
     "types-backports>=0.1.3",
