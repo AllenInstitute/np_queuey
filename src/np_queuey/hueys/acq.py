@@ -81,7 +81,7 @@ def move_sorted_folders_to_npexp(session_or_job: SortingJob | SessionArgs) -> No
         logger.info(f'Moving {src} to {dest}')
         subprocess.run([
             'robocopy', f'{src}', f'{dest}',
-             '/MOVE', '/E', '/J', '/COPYALL', '/R:0', '/W:0', '/MT:32'
+             '/MOVE', '/E', '/J', '/COPY:DAT', '/B', '/R:0', '/W:0', '/MT:32'
              ], check=False) # return code from robocopy doesn't signal failure      
         if src.exists():
             np_tools.move(src, dest, ignore_errors=True)
