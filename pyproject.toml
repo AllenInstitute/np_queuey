@@ -59,6 +59,11 @@ dev = [
     "ruff>=0.0.260",
 ]
 
+[tool.poetry]
+authors = ["Ben Hardcastle"]
+readme = "README.md"
+repository = "https://github.com/AllenInstitute/np_queuey"
+
 [tool.pdm.scripts]
 # usage: pdm run <script> [args]
 ruff = "ruff --fix src"
