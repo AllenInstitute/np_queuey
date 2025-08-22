@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import configparser
-import contextlib
-import itertools
+from dataclasses import dataclass
+import dataclasses
 import json
 import os
 import pathlib
@@ -11,13 +11,23 @@ import re
 import shutil
 import subprocess
 import time
-from typing import Generator, Iterable, NoReturn
+from typing import Generator, Iterable, NoReturn, Literal
+from collections.abc import Sequence
+import random
+import pathlib
 
+
+import lazynwb
+import polars as pl
+import matplotlib.pyplot as plt
+import numpy as np
+import numpy.typing as npt
 import boto3
 import np_config
 import np_logging
 import np_session
 import np_tools
+from npc_sync import SyncDataset
 import upath
 from huey import MemoryHuey
 from np_jobs import (Job, JobT, PipelineNpexpUploadQueue, SessionArgs,
@@ -25,13 +35,14 @@ from np_jobs import (Job, JobT, PipelineNpexpUploadQueue, SessionArgs,
                      update_status)
 from typing_extensions import Literal
 
+# disable interactive plot mode which errors in huey
+plt.switch_backend('agg')
+
 logger = np_logging.getLogger()
 
 huey = MemoryHuey(immediate=True)
 
 SESSION_IDS = [
-    "1051155866_524760_20200917",
-    "1051155866_524760_20200917",
     "1051155866_524760_20200917",
     "1044385384_524761_20200819",
     "1044594870_524761_20200820",
@@ -188,7 +199,6 @@ SESSION_IDS = [
 ]
 FOR_SCALING = [s for s in SESSION_IDS if any(s.startswith(str(x)) for x in [1043752325, 1044016459, 1044385384, 1044389060, 1044594870,       1044597824, 1046166369, 1046581736, 1047969464, 1047977240,       1048189115, 1048196054, 1049273528, 1049514117, 1051155866,       1052331749, 1052342277, 1052530003, 1052533639, 1053709239,       1053718935, 1053925378, 1053941483, 1055221968, 1055240613,       1055403683, 1055415082, 1056495334, 1056720277, 1059908979,       1061238668, 1061463555, 1062755416, 1062755779, 1063010385,       1063010496, 1064400234, 1064415305, 1064639378, 1064644573,       1065437523, 1065449881, 1065905010, 1065908084, 1067588044,       1067781390, 1067790400, 1069192277, 1069193611, 1069458330,       1069461581, 1070961372, 1071300149, 1072341440, 1072345110,       1072567062, 1072572100, 1076265417, 1076487758, 1077711823,       1077712208, 1077897245, 1079018622, 1079018673, 1079275221,       1079278078, 1081079981, 1081090969, 1081429294, 1081431006,       1084427055, 1084428217, 1084939136, 1086198651, 1086200042,       1086410738, 1086433081, 1087720624, 1087723305, 1087992708,       1087993643, 1089296550, 1090800639, 1090803859, 1091039376,       1091039902, 1092283837, 1092466205, 1093638203, 1093642839,       1093864136, 1093867806, 1095138995, 1095340643, 1096620314,       1096935816, 1098119201, 1099596266, 1099598937, 1099869737,       1099872628, 1101263832, 1101268690, 1101473342, 1104052767,       1104058216, 1104289498, 1104297538, 1105543760, 1105798776,       1106985031, 1107172157, 1108335514, 1108528422, 1115086689,       1115368723, 1116941914, 1117148442, 1118327332, 1118508667,       1119946360, 1120251466, 1121406444, 1121607504, 1122903357,       1123100019, 1124285719, 1124507277, 1125713722, 1125937457,       1128520325, 1128719842, 1130113579, 1130349290, 1139846596,       1140102579, 1152632711, 1152811536])]
 EXTRACTION_Q = VBNExtractionQueue()
-UPLOAD_Q = VBNUploadQueue()
 
 AWS_CREDENTIALS: dict[Literal['aws_access_key_id', 'aws_secret_access_key'], str] = np_config.fetch('/projects/vbn_upload')['aws']['credentials']
 """Config for connecting to AWS/S3 via awscli/boto3"""
@@ -201,7 +211,7 @@ SESSION = boto3.session.Session(**client_kwargs)
 
 S3_BUCKET = np_config.fetch('/projects/vbn_upload')['aws']['bucket']
 S3_PATH = upath.UPath(f"s3://{S3_BUCKET}/visual-behavior-neuropixels", client_kwargs=client_kwargs) 
-
+assert S3_PATH, f'{S3_PATH=} must be a path'
 
 @huey.task()
 def extract_outstanding_sessions() -> None:
@@ -224,16 +234,20 @@ def run_extraction(session_or_job: Job | SessionArgs) -> None:
         if not (d := get_local_sorted_dirs(job)) or len(d) < 6:
             if len(d) > 0:
                 remove_local_extracted_data(job) # else sorting pipeline won't re-extract
+        try:
             extract_local_raw_data(job)
-        verify_extraction(job)
-        replace_timestamps(job)
-        update_voltage_conversion_in_settings_xml(job)
-        write_extra_probe_metadata(job)
-        upload_extracted_data_to_s3(job)
-        np_logging.web('np_queuey-vbn').info('Starting upload for %s', job.session)
-        # upload_sync_file_to_s3(job) 
-        remove_local_raw_data(job)
-        remove_local_extracted_data(job)
+            verify_extraction(job)
+            replace_timestamps(job)
+            write_qc_plots(job)
+            write_extra_probe_metadata(job)
+            upload_corrected_settings_xml_file(job)
+            upload_extracted_data_to_s3(job)
+            np_logging.web('np_queuey-vbn').info('Starting upload for %s', job.session)
+        finally:
+            # logger.warning(f"Raw data not being removed for the purpose of testing - remember to re-enable")
+            remove_local_raw_data(job)
+            remove_local_extracted_data(job)
+            
     np_logging.web('np_queuey-vbn').info('Upload finished for %s', job.session)
 
 RAW_DRIVES = ('A:', 'B:', 'C:',)
@@ -252,20 +266,39 @@ def needs_scaling(session_or_job: Job | SessionArgs) -> bool:
     session = get_session(session_or_job)
     return session.npexp_path.name in FOR_SCALING
 
-def update_voltage_conversion_in_settings_xml(session_or_job: Job | SessionArgs) -> None:
+def get_settings_xml_path(session_or_job: Job | SessionArgs) -> pathlib.Path:
+    for raw_dir in get_local_raw_dirs(session_or_job):
+        if (xml := next(raw_dir.glob('settings*.xml'), None)):
+            return xml
+    else:
+        raise FileNotFoundError(f'No settings.xml file found for {session_or_job}')
+    
+def upload_corrected_settings_xml_file(session_or_job: Job | SessionArgs) -> None:
+    src = update_gain_in_settings_xml(session_or_job)
+    dest = get_dest_from_src(session_or_job, src)
+    assert dest is not None
+    upload_file(src, dest)
+    
+def update_gain_in_settings_xml(session_or_job: Job | SessionArgs) -> pathlib.Path:
     session = get_session(session_or_job)
+    path = get_settings_xml_path(session_or_job)
     if not needs_scaling(session):
         logger.info(f"No voltage conversion needed for {session.npexp_path.name}")
-        return None
+        return path
+    xml = path.read_text()
     orig = "0.19499999284744262695"
     new = "0.09749999642372131347"
-    for extracted_dir in get_local_sorted_dirs(session_or_job):
-        for settings_xml in extracted_dir.rglob('settings*.xml'):
-            logger.info(f'Updating voltage conversion factor in {settings_xml}')
-            settings_xml.write_text(
-                settings_xml.read_text().replace(orig, new)
-            )
-
+    if new in xml:
+        logger.info(f"Voltage conversion has already been applied to settings.xml for {session.npexp_path.name}")
+        return path
+    assert orig in xml, f"{path} is uncorrected and has a different gain setting than expected"
+    logger.info(f"Updating gain in {path}")
+    path.write_text(
+        xml.replace(orig, new)
+    )
+    return path
+    
+PROBE_METADATA_FILENAME = 'probe_info.json'
 def write_extra_probe_metadata(session_or_job: Job | SessionArgs) -> None:
     all_probe_metadata = get_probe_metadata(session_or_job)
     for extracted_dir in get_local_sorted_dirs(session_or_job):
@@ -277,7 +310,7 @@ def write_extra_probe_metadata(session_or_job: Job | SessionArgs) -> None:
            )
         )
         logger.info(f'Writing probe metadata for {extracted_dir.name}: {metadata}')
-        (extracted_dir / 'probe_info.json').write_text(json.dumps(metadata, indent=4))
+        (extracted_dir / PROBE_METADATA_FILENAME).write_text(json.dumps(metadata, indent=4))
         
 def get_raw_dirs_on_lims(session_or_job: Job | SessionArgs) -> tuple[pathlib.Path, ...]:
     """
@@ -324,7 +357,7 @@ def get_sync_file(session_or_job: Job | SessionArgs) -> pathlib.Path:
         get_session(session_or_job).data_dict['sync_file']
     )
 
-def get_probe_metadata(session_or_job: Job | SessionArgs) -> list[dict[str, int]]:
+def get_probe_metadata(session_or_job: Job | SessionArgs) -> list[dict]:
     """
     >>> get_surface_channels(1077891954)[0]
     {'name': 'probeF', 'surface_channel': 366, 'serial_number': 1077995099, 'scaling_factor': 1.0}
@@ -333,15 +366,16 @@ def get_probe_metadata(session_or_job: Job | SessionArgs) -> list[dict[str, int]
     lfp_subsampling_paths = sorted(session.lims_path.glob('EcephysLfpSubsamplingStrategy/*/ECEPHYS_LFP_SUBSAMPLING_QUEUE_*_input.json'))
     if not lfp_subsampling_paths:
         raise ValueError(f'No LFP subsampling strategy input json found for {session}: cannot determine surface channels')
-    data = json.loads(lfp_subsampling_paths[-1].read_text())
+    probe_metadata = json.loads(lfp_subsampling_paths[-1].read_text())
     return [
         {
             'name': p['name'], 
             'surface_channel': int(p['surface_channel']),
             'serial_number': get_probe_id(session_or_job, p['name']),
-            'scaling_factor': 0.5 if needs_scaling(session_or_job) else 1.0,
+            'amplitude_scaling_factor': 0.5 if needs_scaling(session_or_job) else 1.0,
+            'note': "'amplitude_scaling_factor' applies to data in ap_continuous and lfp_continuous .dat files; the scaling factor as already been applied to the 'gain' parameter in the settings.xml file"
         }
-        for p in data['probes']
+        for p in probe_metadata['probes']
     ]
 
 def get_probe_id(session_or_job: Job | SessionArgs, path: str | pathlib.Path) -> int:
@@ -381,27 +415,26 @@ def get_dest_from_src(session_or_job: Job | SessionArgs, src: pathlib.Path) -> u
     >>> get_dest_from_src(1051155866, pathlib.Path('D:/1051155866_524760_20200917_probeB_sorted/Neuropix-PXI-100.0/continuous.dat')).as_posix()
     's3://staging.visual-behavior-neuropixels-data/raw-data/1051155866/1051284113/spike_band.dat'
     """
+    if src.suffix in ('.sync', '.h5'):
+        name = 'sync.h5'
+        return get_session_upload_path(session_or_job) / name
+    if src.suffix == '.xml' and src.stem.startswith('settings'):
+        return get_session_upload_path(session_or_job) / 'settings.xml'
     
-    try:
-        probe_id = get_probe_id(session_or_job, src)
-    except AssertionError:
-        probe_id = None
-    if probe_id:
-        is_lfp = 'lfp' in src.as_posix().lower() or src.parent.name.endswith('.1')
-        if src.name == 'continuous.dat':
-            name = 'lfp_band.dat' if is_lfp else 'spike_band.dat' 
-        elif src.name in ('event_timestamps.npy', 'channel_states.npy'):
-            name = src.name
-        else:
-            return None
-        dest = get_session_upload_path(session_or_job) / f'{probe_id}' / name
+    probe_id = get_probe_id(session_or_job, src)
+    is_lfp = 'lfp' in src.as_posix().lower() or src.parent.name.endswith('.1')
+    if src.name == 'continuous.dat':
+        name = 'lfp_band.dat' if is_lfp else 'spike_band.dat' 
+    elif src.name in (
+        # 'event_timestamps.npy', 'channel_states.npy',  
+        #! ^^ we've corrected continuous timestamps so these are no longer informative
+        'ap_timestamps.npy', 'lfp_timestamps.npy',
+        PROBE_METADATA_FILENAME,
+    ):
+        name = src.name
     else:
-        if src.suffix in ('.sync', '.h5'):
-            name = 'sync.h5'
-            dest = get_session_upload_path(session_or_job) / name
-        else:
-            return None
-    return dest
+        return None
+    return get_session_upload_path(session_or_job) / f'{probe_id}' / name
 
 
 def assert_s3_path_exists() -> None:
@@ -449,19 +482,90 @@ def verify_extraction(session_or_job: Job | SessionArgs) -> None:
         raise ValueError(f'Extraction failed for {session}: total size of raw folders is bigger than extracted folders')
     logger.info('Finished verifying extraction')
 
+TIMESTAMPS_REPLACED_FLAG = 'TIMESTAMPS_CORRECTED'
 def replace_timestamps(session_or_job: Job | SessionArgs) -> None:
-    session = get_session(session_or_job)
-    extracted_paths = get_local_sorted_dirs(session)
-    recording_dirs = itertools.chain.from_iterable(
-        extracted_path.glob("Record Node */experiment1/recording*")
-        for extracted_path in extracted_paths
-    )
-    for timing in npc_ephys.get_ephys_timing_on_sync(
-        sync=get_sync_file(session_or_job),
-        recording_dirs=recording_dirs,
-    ):
-        logger.info(f'Replacing timestamps for {timing.device.name}')
-        npc_ephys.overwrite_timestamps(timing)
+    for timing in get_start_times_and_sampling_rates(session_or_job):
+        flag = timing.timestamps_path.with_name(TIMESTAMPS_REPLACED_FLAG)
+        if flag.exists():
+            logger.info(f'Timestamps already replaced for {timing.device_name}')
+            continue
+        timing.timestamps_path.with_name('timing_info.json').write_text(
+            json.dumps(
+                {
+                    'sampling_rate': timing.sampling_rate,
+                    'start_time': timing.start_time,
+                },
+                indent=4,
+            )
+        )
+        flag.touch()
+        logger.info(f'Replacing timestamps for {timing.device_name}: {timing.sampling_rate=}')
+        first_sample_index = np.load(timing.timestamps_path, mmap_mode='r')[0].item()
+        default_continuous = np.arange(
+            start=first_sample_index,
+            stop=first_sample_index + timing.num_samples ,
+            dtype=np.float64,
+        )
+        adjusted_continuous = (
+            default_continuous / timing.sampling_rate
+        ) + timing.start_time
+        np.save(timing.timestamps_path, adjusted_continuous)
+
+def write_qc_plots(session_or_job) -> None:
+    qc_dir = pathlib.Path('//allen/programs/mindscope/workgroups/np-exp/vbn_data_release/raw_data_upload_qc')
+    qc_dir.mkdir(exist_ok=True, parents=True)
+    for extracted_dir in get_local_sorted_dirs(session_or_job):
+        session_id, subject_id, date, probe_name, *_ = extracted_dir.name.split('_')
+        ephys_nwb_path = next(
+            p for p in pathlib.Path("//allen/programs/mindscope/workgroups/np-exp/vbn_data_release/visual-behavior-neuropixels-0.5.0/behavior_ecephys_sessions").glob("*/ecephys_session_??????????.nwb")
+            if session_id in p.as_posix()
+        )
+        electrodes = lazynwb.scan_nwb(ephys_nwb_path, "general/extracellular_ephys/electrodes", infer_schema_length=1).filter(pl.col("group_name") == probe_name)
+        units = lazynwb.scan_nwb(ephys_nwb_path, 'units', infer_schema_length=1)
+
+        probe_units = (
+            units
+            .filter(
+                pl.col('quality') == 'good',
+                
+            )
+            .select('_table_index', 'peak_channel_id', 'amplitude')
+            .join(electrodes, left_on='peak_channel_id', right_on='id')
+            .collect()
+        )   
+        if len(probe_units) == 0:
+            logger.warning(f'no units in NWB for {session_or_job} {probe_name}')
+            continue
+        largest_unit = probe_units.sort(pl.col('amplitude').abs())[-1]
+        unit = largest_unit
+        peak_channel = unit['probe_channel_number'][0]
+        spike_times = (
+            units
+            .filter(pl.col('_table_index') == unit['_table_index'][0])
+            .select('spike_times')
+            .collect()
+        )['spike_times'][0].to_numpy()
+        ap_data = np.memmap(extracted_dir / "continuous" / "Neuropix-PXI-100.0" / "continuous.dat", dtype=np.int16).reshape((-1, 384))
+        ap_timestamps = np.load(extracted_dir / "continuous" / "Neuropix-PXI-100.0" / "ap_timestamps.npy")
+                
+        dur = 0.0005
+
+        channel_span = 10
+        y_min, y_max = peak_channel - channel_span, peak_channel + channel_span
+        y_slice = slice(y_max, y_min, -1)
+        sample = random.sample(spike_times.tolist(), k=1)
+        for t in sample:
+            t_mask = (ap_timestamps >= t - dur) & (ap_timestamps < t + dur)
+            data = ap_data[t_mask, y_slice].T
+            data = data - np.median(data, axis=0)
+            plt.ioff() 
+            plt.imshow(data, aspect='auto', cmap='bwr', extent=[-dur, dur, y_min, y_max])
+            plt.axvline(0, color='grey', lw=.5)
+            plt.colorbar()
+            plt.savefig((qc_dir / f"{extracted_dir.name}.png").as_posix())
+            plt.close()
+        ap_timestamps = None
+    
     
 def remove_local_extracted_data(session_or_job: Job | SessionArgs) -> None:
     session = get_session(session_or_job)
@@ -505,7 +609,8 @@ def upload_extracted_data_to_s3(session_or_job: Job | SessionArgs) -> None:
 def upload_file(src: pathlib.Path, dest: pathlib.Path) -> None:
     client = SESSION.client("s3")
     logger.info(f'Uploading {src} -> {dest}')
-    client.upload_file(src, S3_BUCKET, dest.as_posix().split(S3_PATH.as_posix())[-1]) # relative_to doesn't work
+    object_name = dest.as_posix().split(S3_BUCKET)[-1].strip('/') # relative_to doesn't work
+    client.upload_file(src, S3_BUCKET, object_name) 
      
 def get_s3_key(path: upath.UPath) -> str:
     """
@@ -592,9 +697,6 @@ def ensure_credentials() -> None:
         logger.info('Wrote %s', file)
         
 
-def add_job_to_upload_queue(session_or_job: Job | SessionArgs) -> None:
-    UPLOAD_Q.add_or_update(session_or_job)
-
 
 def main() -> NoReturn:
     """Run synchronous task loop."""
@@ -602,7 +704,407 @@ def main() -> NoReturn:
         extract_outstanding_sessions()
         time.sleep(300)
                 
-                
+# sync probe stuff ------------------------------------------------- #
+@dataclasses.dataclass
+class ProbeTiming:
+    device_name: str
+    start_time: float
+    sampling_rate: float
+    timestamps_path: pathlib.Path
+    num_samples: int
+
+def get_timestamps_path(session_or_job, probe_name: str, band: str) -> pathlib.Path:
+    if band.lower() == 'ap':
+        record_node = 'Neuropix-PXI-100.0'
+        file_name = 'ap_timestamps.npy'
+    elif band.lower() == 'lfp':
+        record_node = 'Neuropix-PXI-100.1'
+        file_name = 'lfp_timestamps.npy'
+    else:
+        raise ValueError(f'band must be ap or lfp (case-insensitive): got {band}')
+    for extracted_dir in get_local_sorted_dirs(session_or_job):
+        if probe_name in extracted_dir.as_posix():
+            return extracted_dir / 'continuous' / record_node / file_name
+    raise FileNotFoundError(f"timestamps not found for {session_or_job} {probe_name} {band}")
+
+def get_start_times_and_sampling_rates(
+    session_or_job: Job | SessionArgs,
+) -> tuple[ProbeTiming, ...]:
+    results = []
+    for probe in np_session.Session(session_or_job).lims['ecephys_probes']:
+        for band in ('_', '_lfp_'):
+            results.append(
+                ProbeTiming(
+                    device_name=probe['name'],
+                    start_time=-probe['total_time_shift'],
+                    sampling_rate=probe[f"global_probe{band}sampling_rate"],
+                    timestamps_path=(p := get_timestamps_path(session_or_job, probe_name=probe['name'], band='ap' if band == '_' else 'lfp')),
+                    num_samples=np.memmap(p.with_name('continuous.dat'), dtype=np.int16).shape[0] / 384,
+                )
+            )
+    return tuple(results)
+
+def extract_barcodes_from_times(
+    on_times: np.ndarray,
+    off_times: np.ndarray,
+    inter_barcode_interval: float = 29,
+    bar_duration: float = 0.015,
+    barcode_duration_ceiling: float = 2,
+    nbits: int = 32,
+    total_time_on_line: float | None = None,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.int64]]:
+    # from ecephys repo
+    """Read barcodes from timestamped rising and falling edges.
+    Parameters
+    ----------
+    on_times : numpy.ndarray
+        Timestamps of rising edges on the barcode line
+    off_times : numpy.ndarray
+        Timestamps of falling edges on the barcode line
+    inter_barcode_interval : numeric, optional
+        Minimun duration of time between barcodes.
+    bar_duration : numeric, optional
+        A value slightly shorter than the expected duration of each bar
+    barcode_duration_ceiling : numeric, optional
+        The maximum duration of a single barcode
+    nbits : int, optional
+        The bit-depth of each barcode
+    total_time_on_line: float, optional
+        Timestamp of the last sample on the line (not the last falling edge) used
+        to disgard barcodes that are truncated by the end of the recording
+    Returns
+    -------
+    barcode_start_times : list of numeric
+        For each detected barcode, the time at which that barcode started
+    barcodes : list of int
+        For each detected barcode, the value of that barcode as an integer.
+    """
+    if off_times[0] < on_times[0]:
+        off_times = off_times[1:]
+    if on_times[-1] > off_times[-1]:
+        on_times = on_times[:-1]
+    assert len(on_times) == len(
+        off_times
+    ), f"on and off times should be same length ({len(on_times)} != {len(off_times)})"
+    start_indices = np.where(np.diff(on_times) > inter_barcode_interval)[0] + 1
+    if on_times[0] > barcode_duration_ceiling:
+        # keep first barcode as it occurred sufficiently far from start of recording
+        start_indices = np.insert(start_indices, 0, 0)
+    # remove times close to end of recording to avoid using truncated barcode
+    if total_time_on_line is not None:
+        off_times = off_times[
+            off_times <= (total_time_on_line - barcode_duration_ceiling)
+        ]
+        on_times = on_times[on_times < off_times[-1]]
+        start_indices = start_indices[start_indices < len(on_times)]
+    assert len(on_times) == len(
+        off_times
+    ), f"on and off times should be same length ({len(on_times)} != {len(off_times)})"
+    assert max(start_indices) < len(
+        on_times
+    ), f"start indices out of bounds ({max(start_indices)} >= {len(on_times)})"
+
+    barcode_start_times = on_times[start_indices]
+    barcodes = []
+    for _i, t in enumerate(barcode_start_times):
+        oncode = on_times[
+            np.where(
+                np.logical_and(on_times > t, on_times < t + barcode_duration_ceiling)
+            )[0]
+        ]
+        offcode = off_times[
+            np.where(
+                np.logical_and(off_times > t, off_times < t + barcode_duration_ceiling)
+            )[0]
+        ]
+
+        currTime = offcode[0]
+
+        bits = np.zeros((nbits,))
+
+        for bit in range(0, nbits):
+            nextOn = np.where(oncode > currTime)[0]
+            nextOff = np.where(offcode > currTime)[0]
+
+            if nextOn.size > 0:
+                nextOn = oncode[nextOn[0]]
+            else:
+                nextOn = t + inter_barcode_interval
+
+            if nextOff.size > 0:
+                nextOff = offcode[nextOff[0]]
+            else:
+                nextOff = t + inter_barcode_interval
+
+            if nextOn < nextOff:
+                bits[bit] = 1
+
+            currTime += bar_duration
+
+        barcode = 0
+
+        # least sig left
+        for bit in range(0, nbits):
+            barcode += bits[bit] * pow(2, bit)
+
+        barcodes.append(barcode)
+
+    return barcode_start_times, np.array(barcodes, dtype=np.int64)
+
+
+def find_matching_index(
+    master_barcodes: np.ndarray,
+    probe_barcodes: np.ndarray,
+    alignment_type: Literal["start", "end"] = "start",
+) -> tuple[int, int] | tuple[None, None]:
+    """Given a set of barcodes for the master clock and the probe clock, find the
+    indices of a matching set, either starting from the beginning or the end
+    of the list.
+    Parameters
+    ----------
+    master_barcodes : np.ndarray
+        barcode values on the master line. One per barcode
+    probe_barcodes : np.ndarray
+        barcode values on the probe line. One per barcode
+    alignment_type : string
+        'start' or 'end'
+    Returns
+    -------
+    master_barcode_index : int
+        matching index for master barcodes (None if not found)
+    probe_barcode_index : int
+        matching index for probe barcodes (None if not found)
+
+
+    >>> find_matching_index(np.array([1, 2, 3]), np.array([1, 2, 3]), alignment_type="start")
+    (0, 0)
+    >>> find_matching_index(np.array([1, 2, 3]), np.array([1, 2, 3]), alignment_type="end")
+    (2, -1)
+    >>> find_matching_index(np.array([1, 2, 3]), np.array([4, 5, 6]), alignment_type="start")
+    (None, None)
+
+    # in cases of multiple matches (affecting 626791_2022-08-16)
+    >>> find_matching_index(np.array([1, 1, 2]), np.array([1, 1, 2]), alignment_type="start")
+    (0, 0)
+    >>> find_matching_index(np.array([1, 1, 2]), np.array([1, 2]), alignment_type="start")
+    (1, 0)
+    >>> find_matching_index(np.array([1, 2, 2]), np.array([1, 2, 2]), alignment_type="end")
+    (2, -1)
+    >>> find_matching_index(np.array([1, 2, 2]), np.array([1, 2]), alignment_type="end")
+    (1, -1)
+    """
+    if alignment_type not in ["start", "end"]:
+        raise ValueError(
+            "alignment_type must be 'start' or 'end', not " + str(alignment_type)
+        )
+    foundMatch = False
+    master_barcode_index = None
+
+    if alignment_type == "start":
+        probe_barcode_index = 0
+        direction = 1
+    else:
+        probe_barcode_index = -1
+        direction = -1
+
+    while not foundMatch and abs(probe_barcode_index) < len(probe_barcodes):
+        master_barcode_index = np.where(
+            master_barcodes == probe_barcodes[probe_barcode_index]
+        )[0]
+        if (
+            len(master_barcode_index) > 1
+        ):  # multiple matches only happened once, in 626791_2022-08-16
+            # check whether two instances are also found on the probe:
+            if probe_barcodes[probe_barcode_index] not in (
+                0,
+                1,
+                2,
+                2154270975,
+            ):  # tests and known barcode that has multiple matches
+                logger.warning(
+                    f"Multiple barcode matches found on sync clock: {master_barcode_index=}. "
+                    "Using most sensible match, but if this happens frequently there's probably a bug."
+                )
+            duplicates_on_probe = np.where(
+                probe_barcodes == probe_barcodes[probe_barcode_index]
+            )[0]
+            if alignment_type == "start":
+                duplicates_on_master = master_barcode_index[-len(duplicates_on_probe) :]
+            else:
+                duplicates_on_master = master_barcode_index[: len(duplicates_on_probe)]
+            master_barcode_index = np.array(
+                [duplicates_on_master[0 if alignment_type == "start" else -1]]
+            )
+
+        if len(master_barcode_index) == 1:
+            foundMatch = True
+        else:
+            probe_barcode_index += direction
+
+    if foundMatch and master_barcode_index is not None:
+        return master_barcode_index[0], probe_barcode_index
+    else:
+        return None, None
+
+
+def match_barcodes(
+    master_times: np.ndarray,
+    master_barcodes: np.ndarray,
+    probe_times: np.ndarray,
+    probe_barcodes: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Given sequences of barcode values and (local) times on a probe line and a master
+    line, find the time points on each clock corresponding to the first and last shared
+    barcode.
+    If there's only one probe barcode, only the first matching timepoint is returned.
+    Parameters
+    ----------
+    master_times : np.ndarray
+        start times of barcodes (according to the master clock) on the master line.
+        One per barcode.
+    master_barcodes : np.ndarray
+        barcode values on the master line. One per barcode
+    probe_times : np.ndarray
+        start times (according to the probe clock) of barcodes on the probe line.
+        One per barcode
+    probe_barcodes : np.ndarray
+        barcode values on the probe_line. One per barcode
+    Returns
+    -------
+    probe_interval : np.ndarray
+        Start and end times of the matched interval according to the probe_clock.
+    master_interval : np.ndarray
+        Start and end times of the matched interval according to the master clock
+    """
+
+    master_start_index, probe_start_index = find_matching_index(
+        master_barcodes, probe_barcodes, alignment_type="start"
+    )
+
+    if master_start_index is not None:
+        t_m_start = master_times[master_start_index]
+        t_p_start = probe_times[probe_start_index]
+    else:
+        t_m_start, t_p_start = None, None
+
+    # print(master_barcodes)
+    # print(probe_barcodes)
+
+    # print("Master start index: " + str(master_start_index))
+    if len(probe_barcodes) > 1:
+        master_end_index, probe_end_index = find_matching_index(
+            master_barcodes, probe_barcodes, alignment_type="end"
+        )
+
+        if probe_end_index is not None:
+            # print("Probe end index: " + str(probe_end_index))
+            t_m_end = master_times[master_end_index]
+            t_p_end = probe_times[probe_end_index]
+        else:
+            t_m_end = None
+            t_p_end = None
+    else:
+        t_m_end, t_p_end = None, None
+
+    if not any([t_m_start, t_m_end, t_p_start, t_p_end]):
+        raise ValueError(
+            "No matching barcodes found between master and probe lines. "
+            "Either the sync file did not capture this ephys recording (session mix-up), "
+            "or there was a problem with barcode generation or recording (a line disconnected)"
+        )
+    return np.array([t_p_start, t_p_end]), np.array([t_m_start, t_m_end])
+
+
+def linear_transform_from_intervals(
+    master: np.ndarray | Sequence[float], probe: np.ndarray | Sequence[float]
+) -> tuple[float, float]:
+    # from ecephys repo
+    """Find a scale and translation which aligns two 1d segments
+    Parameters
+    ----------
+    master : iterable
+        Pair of floats defining the master interval. Order is [start, end].
+    probe : iterable
+        Pair of floats defining the probe interval. Order is [start, end].
+    Returns
+    -------
+    scale : float
+        Scale factor. If > 1.0, the probe clock is running fast compared to the
+        master clock. If < 1.0, the probe clock is running slow.
+    translation : float
+        If > 0, the probe clock started before the master clock. If > 0, after.
+    Notes
+    -----
+    solves
+        (master + translation) * scale = probe
+    for scale and translation
+    """
+
+    scale = (probe[1] - probe[0]) / (master[1] - master[0])
+    translation = probe[0] / scale - master[0]
+
+    return float(scale), float(translation)
+
+
+def get_probe_time_offset(
+    master_times: np.ndarray,
+    master_barcodes: np.ndarray,
+    probe_times: np.ndarray,
+    probe_barcodes: np.ndarray,
+    acq_start_index: int,
+    local_probe_rate: float,
+) -> tuple[float, float, np.ndarray]:
+    # from ecephys repo
+    """Time offset between master clock and recording probes. For converting probe time to master clock.
+
+    Parameters
+    ----------
+    master_times : np.ndarray
+        start times of barcodes (according to the master clock) on the master line.
+        One per barcode.
+    master_barcodes : np.ndarray
+        barcode values on the master line. One per barcode
+    probe_times : np.ndarray
+        start times (according to the probe clock) of barcodes on the probe line.
+        One per barcode
+    probe_barcodes : np.ndarray
+        barcode values on the probe_line. One per barcode
+    acq_start_index : int
+        sample index of probe acquisition start time
+    local_probe_rate : float
+        the probe's apparent sampling rate
+
+    Returns
+    -------
+    total_time_shift : float
+        Time at which the probe started acquisition, assessed on
+        the master clock. If < 0, the probe started earlier than the master line.
+    probe_rate : float
+        The probe's sampling rate, assessed on the master clock
+    master_endpoints : iterable
+        Defines the start and end times of the sync interval on the master clock
+
+    """
+
+    probe_endpoints, master_endpoints = match_barcodes(
+        master_times, master_barcodes, probe_times, probe_barcodes
+    )
+    if any(x is None for x in (*probe_endpoints, *master_endpoints)):
+        raise ValueError(
+            f"Matching barcodes not found: {probe_endpoints=}, {master_endpoints=}"
+        )
+    rate_scale, time_offset = linear_transform_from_intervals(
+        master_endpoints, probe_endpoints
+    )
+
+    probe_rate = local_probe_rate * rate_scale
+    acq_start_time = acq_start_index / probe_rate
+
+    total_time_shift = time_offset - acq_start_time
+
+    return total_time_shift, probe_rate, master_endpoints
+
+
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
